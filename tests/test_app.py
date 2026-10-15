@@ -1,3 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from time import sleep
+
 import pytest
 
 from src.app import activities
@@ -131,3 +135,32 @@ def test_signup_and_unregister_require_email_query_parameter(client, method):
     # Assert
     assert response.status_code == 422
     assert any(error["loc"] == ["query", "email"] for error in response.json()["detail"])
+
+
+@pytest.mark.parametrize("method,rejected_status", [("post", 400), ("delete", 404)])
+def test_concurrent_roster_requests_are_atomic(client, method, rejected_status):
+    # Arrange: force a scheduling opportunity between membership check and mutation.
+    class SlowMembershipList(list):
+        def __contains__(self, value):
+            result = super().__contains__(value)
+            sleep(0.02)
+            return result
+
+    email = "concurrent-student@example.test"
+    participants = SlowMembershipList([email] if method == "delete" else [])
+    activities["Chess Club"]["participants"] = participants
+    start = Barrier(2)
+
+    def request():
+        start.wait(timeout=5)
+        return getattr(client, method)(
+            "/activities/Chess Club/signup", params={"email": email}
+        ).status_code
+
+    # Act
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(lambda _: request(), range(2)))
+
+    # Assert: exactly one request changes the roster, with no duplicates or HTTP 500.
+    assert sorted(statuses) == [200, rejected_status]
+    assert participants == ([email] if method == "post" else [])

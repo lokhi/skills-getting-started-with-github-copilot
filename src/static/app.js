@@ -16,8 +16,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refreshActivities() {
-    const selectedActivity = activitySelect.value;
-
     try {
       const response = await fetch("/activities");
       if (!response.ok) {
@@ -25,6 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const activities = await response.json();
       const activityEntries = Object.entries(activities);
+      const selectedActivity = activitySelect.value;
 
       activitiesList.innerHTML = "";
       activitySelect.replaceChildren(activitySelect.options[0]);
